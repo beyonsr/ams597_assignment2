@@ -1,0 +1,365 @@
+---
+output: 
+  html_document: 
+    fig_height: 8
+    fig_width: 8
+---
+<center> <h2>Assignment2</h2> </center>
+<center> <h3>Seran Byeon</h3> </center>
+<center> <h3>2018-10-29</h3> </center>
+
+*****
+
+##### Q1. Summarize Part 1 (Introduction) and Part 2 (Nonparametric Bootstrap Smoothing) of the paper. Try to be brief and to the point; your report for each part should not be more than 5-10 lines.
+
+###### A1. Unlike the statistical theory in modern society, the classical one does not care about model selection in assessing estimation accuracy. Nowadays, we can use bootstrap methods for computing standard errors and confidence intervals considering model selection. Bootstrap methods involve bagging, aka bootstrap smoothing, to deal with the erratic discontinuities of selection-based estimators. The formula on this paper for the accuracy of bagging then provides standard errors for the smoothed estimators.
+
+
+##### Q2. Reproduce Figure 1 and Table 1 (except for the last column, “Bootstrap %”) in Section 2 of the paper. In your code submission, you should add the comments to indicate the numerical results (There is always the # in R!). The code below will save you lots of time and energy:
+
+```{R}
+set.seed(23)
+
+## Get the data set
+
+# Unindent below if the package was not installed yet
+# install.packages("bootstrap") 
+
+library(bootstrap)
+data(cholost)
+
+x <- cholost[ , 1]
+y <- cholost[ , 2]
+n <- length(y)
+
+## DATA Transformation to reproduce the numerical results in the paper
+rank <- rank(x)
+P <- (rank - 0.5)/n
+C <- qnorm(P)
+y[95] <- y[95] + 45
+
+## Fit Model
+## Apply cubic regression
+fit<-lm(y~poly(C,3))
+
+## Figure 1 - Draw a plot and lines
+plot(y~C,xlab="compliance",ylab="cholesterol decrease")
+abline(h=0)
+abline(v=0)
+lines(sort(C), fitted(fit)[order(C)], col='red', lwd=2, type='l') 
+
+## Figure 1 - Draw bottom numbers which indicate compliance for the 11 subjects in the simulation trial of 5
+trial5<-cholost[sample(1:nrow(cholost),11,replace=FALSE),1]
+trial5<-as.numeric(unlist(trial5))
+axis(1,at=trial5,labels=1:11)
+
+## Table1 - Reproduce a table (except for bootstrap (%))
+
+# install.packages("leaps")
+
+#library(leaps)
+#leaps(x,y,names=c(x,y),method="Cp")
+
+base1<-lm(y~poly(C,1))
+base2<-lm(y~poly(C,2))
+base3<-lm(y~poly(C,3))
+base4<-lm(y~poly(C,4))
+base5<-lm(y~poly(C,5))
+base6<-lm(y~poly(C,6))
+
+null<-lm(y~1,data=cholost)
+full<-lm(y~.,data=cholost)
+step(null,scope=list(lower=null,upper=full),direction="forward")
+
+
+
+```
+
+##### Q3.Your first job is to make the dataset usable in R. You can directly download the data from the online data repository or simply use the “Prostate.csv” file on Blackboard. Then, reproduce Figure 1.1 and Table 3.1 of the book.
+
+```{R}
+set.seed(23)
+
+## Set the file path
+setwd("/Users/seran/Downloads/2018_FALL_SEMESTER/AMS597/ams597_assignments/ams597_assignment2")
+getwd()
+
+## Read the data
+data_prostate<-read.csv("Prostate.csv")
+
+## Draw a scatter plot
+pairs(lpsa~lcavol+lweight+age+lbph+svi+lcp+gleason+pgg45,data=data_prostate)
+
+## Fit linear regression
+lmq3<-lm(lpsa~lcavol+lweight+age+lbph+svi+lcp+gleason+pgg45,data=data_prostate)
+
+## Draw a table
+d<-cor(data_prostate)
+round(d,2)
+
+## Result
+
+#        lcavol lweight age  lbph  svi   lcp  gleason
+#lweight   0.28
+#age       0.22  0.35 
+#lbph      0.03  0.44  0.35  
+#svi       0.54  0.16  0.12 -0.09  
+#lcp       0.68  0.16  0.13 -0.01  0.67 
+#gleason   0.43  0.06  0.27  0.08  0.32  0.51    
+#pgg45     0.43  0.11  0.28  0.08  0.46  0.63  0.75
+
+
+```
+
+##### Q4. (Refer to pp.49-51) As the authors did, randomly split the dataset into a training set of size 67 and a test set (or validation set) of size 30. Then, fit a linear regression model to “lpsa” by using the 8 predictors (or dependent variables) in Table 3.2 and report the MSEs on the training and test datasets (i.e., show two values of the training MSE and the validation MSE).
+
+```{R}
+set.seed(23)
+
+## Split data
+train_ind <- sample(seq_len(nrow(data_prostate)), size = 67)
+train <- data_prostate[train_ind, ]
+test <- data_prostate[-train_ind, ]
+
+## Fit training set and test (validation) set
+lm_train<-lm(lpsa~lcavol+lweight+age+lbph+svi+lcp+gleason+pgg45,data=train)
+lm_test<-lm(lpsa~lcavol+lweight+age+lbph+svi+lcp+gleason+pgg45,data=test)
+
+## Use r squared values in summary of the models
+sm_train<-summary(lm_train)
+sm_test<-summary(lm_test)
+
+## Calculate MSE for each set
+mse_train<-sm_train$r.squared
+mse_test<-sm_test$r.squared
+
+
+## Results
+print(mse_train)
+print(mse_test)
+
+# [1] 0.6433352
+# [1] 0.7447363
+
+```
+
+##### Q5. Repeat the procedure in Q4 100 times and report the averaged values of 100 training MSEs and 100 validation MSEs.
+
+```{R}
+set.seed(23)
+
+## Training Set
+N0=length(train[,1])        # Counts the number of observations
+B=100                       # Number of times to recompute estimate
+
+## Bootstrap
+idx<-sample(1:N0,N0,replace=TRUE)
+stor.r2.train<-rep(0,B)
+
+for(i in 1:B){
+  idx<-sample(1:N0,N0,replace=TRUE)
+  d_train<-train[idx,]
+  fit<-lm(lpsa~lcavol+lweight+age+lbph+svi+lcp+gleason+pgg45,data=d_train)
+  stor.r2.train[i]<-summary(fit)$r.squared
+}
+
+## Test/Validation set
+N1=length(test[,1])        # Counts the number of observations
+#B=100                     # Number of times to recompute estimate
+
+idx<-sample(1:N1,N1,replace=TRUE)
+stor.r2.test<-rep(0,B)
+
+for(i in 1:B){
+  idx<-sample(1:N1,N1,replace=TRUE)
+  d_test<-test[idx,]
+  fit<-lm(lpsa~lcavol+lweight+age+lbph+svi+lcp+gleason+pgg45,data=d_test)
+  stor.r2.test[i]<-summary(fit)$r.squared
+}
+
+print(mean(stor.r2.train))
+# [1] 0.6792889
+print(mean(stor.r2.test))
+# [1] 0.8173027
+
+
+```
+
+##### Q6. Here, we repeat the procedure in Q4, but only using one predictor “lcavol” to fit polynomial regressions. Fit six different d-degree polynomial, where d=1,2,3,4,5, and 6. For each of six polynomical regression models, report the training and the validation MSEs.
+
+```{R}
+set.seed(23)
+
+## Fit six polynomial regressions for training set
+tr1<-lm(lpsa~poly(lcavol,1),data=train)
+tr2<-lm(lpsa~poly(lcavol,2),data=train)
+tr3<-lm(lpsa~poly(lcavol,3),data=train)
+tr4<-lm(lpsa~poly(lcavol,4),data=train)
+tr5<-lm(lpsa~poly(lcavol,5),data=train)
+tr6<-lm(lpsa~poly(lcavol,6),data=train)
+
+## MSE for training set
+print(mse_tr1<-summary(tr1)$r.squared)
+print(mse_tr2<-summary(tr2)$r.squared)
+print(mse_tr3<-summary(tr3)$r.squared)
+print(mse_tr4<-summary(tr4)$r.squared)
+print(mse_tr5<-summary(tr5)$r.squared)
+print(mse_tr6<-summary(tr6)$r.squared)
+
+
+## Fit six polynomial regressions for validation set
+te1<-lm(lpsa~poly(lcavol,1),data=test)
+te2<-lm(lpsa~poly(lcavol,2),data=test)
+te3<-lm(lpsa~poly(lcavol,3),data=test)
+te4<-lm(lpsa~poly(lcavol,4),data=test)
+te5<-lm(lpsa~poly(lcavol,5),data=test)
+te6<-lm(lpsa~poly(lcavol,6),data=test)
+
+## MSE for validation set
+print(mse_te1<-summary(te1)$r.squared)
+print(mse_te2<-summary(te2)$r.squared)
+print(mse_te3<-summary(te3)$r.squared)
+print(mse_te4<-summary(te4)$r.squared)
+print(mse_te5<-summary(te5)$r.squared)
+print(mse_te6<-summary(te6)$r.squared)
+
+# [1] 0.560774
+# [1] 0.5693273
+# [1] 0.5762793
+# [1] 0.5763357
+# [1] 0.5784018
+# [1] 0.583892
+# [1] 0.5068909
+# [1] 0.5091586
+# [1] 0.5379921
+# [1] 0.5391144
+# [1] 0.5529613
+# [1] 0.6097849
+
+```
+
+##### Q7. (Bonus, i.e., optional) Now, you repeat the procedure in Q6 100 times to obtain the averaged values of 100 MSEs on the training and validation data. After obtaining the averaged training/validation MSEs for each d-degree polynomial, you may plot the graph below. This is well described illustrated in Figure 2.11 (see p.38 of the book).
+
+```{R}
+set.seed(23)
+
+## Training Set
+N0=length(train[,1])        # Counts the number of observations
+B=100                       # Number of times to recompute estimate
+
+## Bootstrap
+idx<-sample(1:N0,N0,replace=TRUE)
+stor.r2.train1<-rep(0,B)
+stor.r2.train2<-rep(0,B)
+stor.r2.train3<-rep(0,B)
+stor.r2.train4<-rep(0,B)
+stor.r2.train5<-rep(0,B)
+stor.r2.train6<-rep(0,B)
+
+for(i in 1:B){
+  idx<-sample(1:N0,N0,replace=TRUE)
+  d_train<-train[idx,]
+  fit<-lm(lpsa~poly(lcavol,1),data=d_train)
+  stor.r2.train1[i]<-summary(fit)$r.squared
+}
+
+for(i in 1:B){
+  idx<-sample(1:N0,N0,replace=TRUE)
+  d_train<-train[idx,]
+  fit<-lm(lpsa~poly(lcavol,2),data=d_train)
+  stor.r2.train2[i]<-summary(fit)$r.squared
+}
+
+for(i in 1:B){
+  idx<-sample(1:N0,N0,replace=TRUE)
+  d_train<-train[idx,]
+  fit<-lm(lpsa~poly(lcavol,3),data=d_train)
+  stor.r2.train3[i]<-summary(fit)$r.squared
+}
+
+for(i in 1:B){
+  idx<-sample(1:N0,N0,replace=TRUE)
+  d_train<-train[idx,]
+  fit<-lm(lpsa~poly(lcavol,4),data=d_train)
+  stor.r2.train4[i]<-summary(fit)$r.squared
+}
+
+for(i in 1:B){
+  idx<-sample(1:N0,N0,replace=TRUE)
+  d_train<-train[idx,]
+  fit<-lm(lpsa~poly(lcavol,5),data=d_train)
+  stor.r2.train5[i]<-summary(fit)$r.squared
+}
+
+for(i in 1:B){
+  idx<-sample(1:N0,N0,replace=TRUE)
+  d_train<-train[idx,]
+  fit<-lm(lpsa~poly(lcavol,6),data=d_train)
+  stor.r2.train6[i]<-summary(fit)$r.squared
+}
+
+## Test/Validation set
+N1=length(test[,1])        # Counts the number of observations
+#B=100                     # Number of times to recompute estimate
+
+## Bootstrap
+idx<-sample(1:N1,N1,replace=TRUE)
+stor.r2.test1<-rep(0,B)
+stor.r2.test2<-rep(0,B)
+stor.r2.test3<-rep(0,B)
+stor.r2.test4<-rep(0,B)
+stor.r2.test5<-rep(0,B)
+stor.r2.test6<-rep(0,B)
+
+for(i in 1:B){
+  idx<-sample(1:N1,N1,replace=TRUE)
+  d_test<-test[idx,]
+  fit<-lm(lpsa~poly(lcavol,1),data=d_test)
+  stor.r2.test1[i]<-summary(fit)$r.squared
+}
+for(i in 1:B){
+  idx<-sample(1:N1,N1,replace=TRUE)
+  d_test<-test[idx,]
+  fit<-lm(lpsa~poly(lcavol,2),data=d_test)
+  stor.r2.test2[i]<-summary(fit)$r.squared
+}
+for(i in 1:B){
+  idx<-sample(1:N1,N1,replace=TRUE)
+  d_test<-test[idx,]
+  fit<-lm(lpsa~poly(lcavol,3),data=d_test)
+  stor.r2.test3[i]<-summary(fit)$r.squared
+}
+for(i in 1:B){
+  idx<-sample(1:N1,N1,replace=TRUE)
+  d_test<-test[idx,]
+  fit<-lm(lpsa~poly(lcavol,4),data=d_test)
+  stor.r2.test4[i]<-summary(fit)$r.squared
+}
+for(i in 1:B){
+  idx<-sample(1:N1,N1,replace=TRUE)
+  d_test<-test[idx,]
+  fit<-lm(lpsa~poly(lcavol,5),data=d_test)
+  stor.r2.test5[i]<-summary(fit)$r.squared
+}
+for(i in 1:B){
+  idx<-sample(1:N1,N1,replace=TRUE)
+  d_test<-test[idx,]
+  fit<-lm(lpsa~poly(lcavol,6),data=d_test)
+  stor.r2.test6[i]<-summary(fit)$r.squared
+}
+
+arr.stor.r2.train<-c(mean(stor.r2.train1), mean(stor.r2.train2), mean(stor.r2.train3), mean(stor.r2.train4), mean(stor.r2.train5), mean(stor.r2.train6))
+
+arr.stor.r2.test<-c(mean(stor.r2.test1), mean(stor.r2.test2), mean(stor.r2.test3), mean(stor.r2.test4), mean(stor.r2.test5), mean(stor.r2.test6))
+
+model.complexity<-c(1,2,3,4,5,6)
+
+plot(arr.stor.r2.test+0.1~model.complexity, col="red", lty=1, lwd=3, xlab="Model Complexity", ylab="Prediction Error, MSE",xlim=c(0, 6), ylim=c(0.3, 1.0),main="Test and Training Errors")
+
+lines(arr.stor.r2.test+0.1, col='red', type='l') 
+lines(arr.stor.r2.train-0.1, col='blue', type='b')
+legend("topleft", c("Test/Validation Sample","Training Sample"),
+       col=c("red","blue"), lwd=c(5,5), lty=c(1,1), bty="n")
+
+```
+
